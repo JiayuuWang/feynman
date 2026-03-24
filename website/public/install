@@ -13,6 +13,45 @@ step() {
   printf '==> %s\n' "$1"
 }
 
+run_with_spinner() {
+  label="$1"
+  shift
+
+  if [ ! -t 2 ]; then
+    step "$label"
+    "$@"
+    return
+  fi
+
+  "$@" &
+  pid=$!
+  frame=0
+
+  set +e
+  while kill -0 "$pid" 2>/dev/null; do
+    case "$frame" in
+      0) spinner='|' ;;
+      1) spinner='/' ;;
+      2) spinner='-' ;;
+      *) spinner='\\' ;;
+    esac
+    printf '\r==> %s %s' "$label" "$spinner" >&2
+    frame=$(( (frame + 1) % 4 ))
+    sleep 0.1
+  done
+  wait "$pid"
+  status=$?
+  set -e
+
+  printf '\r\033[2K' >&2
+  if [ "$status" -ne 0 ]; then
+    printf '==> %s failed\n' "$label" >&2
+    return "$status"
+  fi
+
+  step "$label"
+}
+
 normalize_version() {
   case "$1" in
     "" | latest)
@@ -187,8 +226,7 @@ download_file "$download_url" "$archive_path"
 
 mkdir -p "$INSTALL_APP_DIR"
 rm -rf "$INSTALL_APP_DIR/$bundle_name"
-step "Extracting ${archive_name}"
-tar -xzf "$archive_path" -C "$INSTALL_APP_DIR"
+run_with_spinner "Extracting ${archive_name}" tar -xzf "$archive_path" -C "$INSTALL_APP_DIR"
 
 mkdir -p "$INSTALL_BIN_DIR"
 step "Linking feynman into $INSTALL_BIN_DIR"
